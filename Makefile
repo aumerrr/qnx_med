@@ -1,74 +1,40 @@
-ARTIFACT = servo_test
-
-#Build architecture/variant string, possible values: x86, armv7le, etc...
+# Makefile - one binary per main(), all into bin/.  Build: make   Clean: make clean
+# QNX: qcc -Vgcc_ntoaarch64le.  Run "make PLATFORM=aarch64le" (default).
 PLATFORM ?= aarch64le
-
-#Build profile, possible values: release, debug, profile, coverage
 BUILD_PROFILE ?= debug
-
-CONFIG_NAME ?= $(PLATFORM)-$(BUILD_PROFILE)
-OUTPUT_DIR = build/$(CONFIG_NAME)
-TARGET = $(OUTPUT_DIR)/$(ARTIFACT)
-
-#Compiler definitions
-
 CC = qcc -Vgcc_nto$(PLATFORM)
-CXX = q++ -Vgcc_nto$(PLATFORM)_cxx
-LD = $(CC)
 
-#User defined include/preprocessor flags and libraries
+CCFLAGS_release = -O2
+CCFLAGS_debug   = -g -O0 -fno-builtin
+CFLAGS = -Wall -fmessage-length=0 -Icommon $(CCFLAGS_$(BUILD_PROFILE))
+LIBS   = -lm
 
-#INCLUDES += -I/path/to/my/lib/include
-#INCLUDES += -I../mylib/public
+BIN = bin
+COMMON_SERVO = common/servo.c
 
-#LIBS += -L/path/to/my/lib/$(PLATFORM)/usr/lib -lmylib
-#LIBS += -L../mylib/$(OUTPUT_DIR) -lmylib
+# program name : sources
+PROGS = adc_reader actuator_rm ctl_loop monitor cpu_hog msg_flood overrun_inject pot_servo fake_pot
 
-LIBS += -lm
+SRC_adc_reader     = $(wildcard src/adc_reader/*.c)
+SRC_actuator_rm    = $(wildcard src/actuator_rm/*.c) $(COMMON_SERVO)
+SRC_ctl_loop       = $(wildcard src/ctl_loop/*.c)
+SRC_monitor        = $(wildcard src/monitor/*.c)
+SRC_cpu_hog        = src/loadgen/cpu_hog.c
+SRC_msg_flood      = src/loadgen/msg_flood.c
+SRC_overrun_inject = src/loadgen/overrun_inject.c
+SRC_pot_servo      = tools/pot_servo.c $(COMMON_SERVO)
+SRC_fake_pot       = tools/fake_pot.c
 
-#Compiler flags for build profiles
-CCFLAGS_release += -O2
-CCFLAGS_debug += -g -O0 -fno-builtin
-CCFLAGS_coverage += -g -O0 -ftest-coverage -fprofile-arcs
-LDFLAGS_coverage += -ftest-coverage -fprofile-arcs
-CCFLAGS_profile += -g -O0 -finstrument-functions
-LIBS_profile += -lprofilingS
+.PHONY: all clean rebuild
+all: $(addprefix $(BIN)/,$(PROGS))
 
-#Generic compiler flags (which include build type flags)
-CCFLAGS_all += -Wall -fmessage-length=0
-CCFLAGS_all += $(CCFLAGS_$(BUILD_PROFILE))
-#Shared library has to be compiled with -fPIC
-#CCFLAGS_all += -fPIC
-LDFLAGS_all += $(LDFLAGS_$(BUILD_PROFILE))
-LIBS_all += $(LIBS_$(BUILD_PROFILE))
-DEPS = -Wp,-MMD,$(@:%.o=%.d),-MT,$@
-BUILD_PROFILE ?= release
-
-#Macro to expand files recursively: parameters $1 -  directory, $2 - extension, i.e. cpp
-rwildcard = $(wildcard $(addprefix $1/*.,$2)) $(foreach d,$(wildcard $1/*),$(call rwildcard,$d,$2))
-
-#Source list
-SRCS = $(call rwildcard, src, c)
-
-#Object files list
-OBJS = $(addprefix $(OUTPUT_DIR)/,$(addsuffix .o, $(basename $(SRCS))))
-
-#Compiling rule
-$(OUTPUT_DIR)/%.o: %.c
-	@mkdir -p $(dir $@)
-	$(CC) -c $(DEPS) -o $@ $(INCLUDES) $(CCFLAGS_all) $(CCFLAGS) $<
-
-#Linking rule
-$(TARGET):$(OBJS)
-	$(LD) -o $(TARGET) $(LDFLAGS_all) $(LDFLAGS) $(OBJS) $(LIBS_all) $(LIBS)
-
-#Rules section for default compilation and linking
-all: $(TARGET)
+define PROG_RULE
+$(BIN)/$(1): $$(SRC_$(1)) $$(wildcard common/*.h)
+	@mkdir -p $(BIN)
+	$(CC) $(CFLAGS) -o $$@ $$(SRC_$(1)) $(LIBS)
+endef
+$(foreach p,$(PROGS),$(eval $(call PROG_RULE,$(p))))
 
 clean:
-	rm -fr $(OUTPUT_DIR)
-
+	rm -rf $(BIN)
 rebuild: clean all
-
-#Inclusion of dependencies (object files to source and includes)
--include $(OBJS:%.o=%.d)
